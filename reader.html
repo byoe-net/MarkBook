@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MarkBook 阅读</title>
+    <meta name="theme-color" content="#3b82f6">
+    <meta property="og:title" content="MarkBook - 智能体在线">
+    <meta property="og:description" content="在线电子书阅读器">
+    <meta property="og:type" content="website">
+<meta property="og:url" content="https://example.com/reader">
+<meta property="og:image" content="https://example.com/icons/icon-512.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="lib/tailwind-built.css">
+    <link rel="stylesheet" href="lib/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="lib/github.min.css">
+    <link rel="stylesheet" href="lib/github-dark.min.css" media="(prefers-color-scheme: dark)" id="hljs-dark">
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        body { display: flex; flex-direction: column; background: #f8f9fa; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body.dark { background: #111827; color: #e5e7eb; }
+
+        #readerContent {
+            flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            padding: 1rem 1rem 2rem; line-height: 1.8; word-wrap: break-word;
+        }
+        #readerContent h1 { font-size: 1.5em; font-weight: 700; margin: 0.8em 0 0.4em; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.3em; }
+        #readerContent h2 { font-size: 1.3em; font-weight: 600; margin: 0.7em 0 0.3em; }
+        #readerContent h3 { font-size: 1.15em; font-weight: 600; margin: 0.6em 0 0.3em; }
+        #readerContent p { margin: 0.6em 0; }
+        #readerContent pre { background: #f1f5f9; border-radius: 8px; padding: 12px; margin: 0.8em 0; overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: 0.85em; }
+        #readerContent pre code { background: none; padding: 0; font-size: inherit; }
+        #readerContent code { background: rgba(175,184,193,0.2); padding: 0.15em 0.3em; border-radius: 3px; font-size: 0.85em; }
+        #readerContent blockquote { border-left: 4px solid #3b82f6; padding-left: 1em; margin: 0.8em 0; color: #6b7280; }
+        #readerContent table { width: 100%; border-collapse: collapse; margin: 0.8em 0; font-size: 0.9em; }
+        #readerContent th, #readerContent td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
+        #readerContent th { background: #f3f4f6; font-weight: 600; }
+        #readerContent img { max-width: 100%; height: auto; border-radius: 6px; margin: 0.5em 0; }
+        #readerContent ul, #readerContent ol { padding-left: 1.5em; margin: 0.5em 0; }
+        #readerContent li { margin: 0.3em 0; }
+        #readerContent a { color: #2563eb; text-decoration: underline; }
+        #readerContent hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.5em 0; }
+        #readerContent .mermaid { text-align: center; margin: 1em 0; overflow-x: auto; }
+
+        body.dark #readerContent { color: #d1d5db; }
+        body.dark #readerContent h1 { border-bottom-color: #374151; }
+        body.dark #readerContent pre { background: #1e293b; }
+        body.dark #readerContent code { background: rgba(110,118,129,0.4); }
+        body.dark #readerContent blockquote { color: #9ca3af; }
+        body.dark #readerContent th, body.dark #readerContent td { border-color: #374151; }
+        body.dark #readerContent th { background: #1f2937; }
+        body.dark #readerContent a { color: #60a5fa; }
+        body.dark #readerContent hr { border-top-color: #374151; }
+
+        #chapterDrawer {
+            position: fixed; top: 0; left: 0; bottom: 0; width: 280px; max-width: 80vw;
+            background: #fff; z-index: 40; transform: translateX(-100%);
+            transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+            box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+            display: flex; flex-direction: column;
+        }
+        #chapterDrawer.open { transform: translateX(0); }
+        body.dark #chapterDrawer { background: #1f2937; color: #e5e7eb; }
+
+        #drawerOverlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 39;
+            display: none;
+        }
+        #drawerOverlay.open { display: block; }
+
+        .chapter-item {
+            padding: 10px 14px; font-size: 14px; cursor: pointer;
+            border-bottom: 1px solid #f3f4f6; transition: background 0.15s;
+        }
+        .chapter-item:active { background: #eff6ff; }
+        .chapter-item.active { background: #dbeafe; color: #1d4ed8; font-weight: 600; }
+        body.dark .chapter-item { border-bottom-color: #374151; }
+        body.dark .chapter-item:active { background: #1e3a5f; }
+        body.dark .chapter-item.active { background: #1e3a5f; color: #60a5fa; }
+
+        #chapterList { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+        .bottom-nav button:active { transform: scale(0.95); }
+
+        .toast {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            background: #374151; color: #fff; padding: 8px 20px; border-radius: 20px;
+            font-size: 13px; z-index: 50; opacity: 0; transition: opacity 0.3s;
+            pointer-events: none; white-space: nowrap;
+        }
+        .toast.show { opacity: 1; }
+    </style>
+    <script defer src="lib/marked.min.js"></script>
+    <script defer src="lib/purify.min.js"></script>
+    <script defer src="lib/highlight.min.js"></script>
+</head>
+<body>
+    <div id="drawerOverlay" onclick="closeDrawer()"></div>
+
+    <div id="chapterDrawer">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+            <span id="drawerBookTitle" class="text-sm font-semibold truncate">加载中...</span>
+            <button onclick="closeDrawer()" class="text-gray-400 hover:text-gray-600 p-1"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="chapterList"></div>
+    </div>
+
+    <div id="topBar" class="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-200 flex-shrink-0 z-10">
+        <div class="flex items-center gap-2 min-w-0">
+            <button onclick="toggleDrawer()" class="text-gray-500 p-1" title="目录"><i class="fas fa-bars text-lg"></i></button>
+            <div class="min-w-0">
+                <div id="topBookTitle" class="text-xs text-gray-400 truncate"></div>
+                <div id="topChapterTitle" class="text-sm font-semibold truncate">加载中...</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-1">
+            <button onclick="showFontMenu()" id="fontBtn" class="px-2 py-1 text-gray-500 rounded hover:bg-gray-100 text-xs" title="字体大小"><i class="fas fa-font"></i></button>
+            <button onclick="toggleDark()" id="darkBtn" class="px-2 py-1 text-gray-500 rounded hover:bg-gray-100 text-xs" title="深色模式"><i class="fas fa-moon"></i></button>
+        </div>
+    </div>
+
+    <div id="readerContent"></div>
+
+    <div class="bottom-nav flex items-center justify-between px-3 py-2 bg-white border-t border-gray-200 flex-shrink-0 z-10">
+        <button id="prevBtn" class="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 rounded hover:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none" disabled>
+            <i class="fas fa-chevron-left text-xs"></i> 上一章
+        </button>
+        <button onclick="toggleDrawer()" class="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 rounded hover:bg-blue-50">
+            <i class="fas fa-list"></i> 目录
+        </button>
+        <button id="nextBtn" class="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 rounded hover:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none" disabled>
+            下一章 <i class="fas fa-chevron-right text-xs"></i>
+        </button>
+    </div>
+
+    <div id="fontMenu" class="fixed bottom-16 left-1/2 -translate-x-1/2 bg-white shadow-xl rounded-xl border border-gray-200 px-4 py-3 z-30 hidden" style="width:260px">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-gray-500">字号</span>
+            <span id="fontSizeLabel" class="text-xs text-gray-500">16px</span>
+        </div>
+        <input type="range" id="fontSizeRange" min="14" max="24" value="16" step="1" class="w-full">
+        <div class="flex items-center justify-between mt-2">
+            <span class="text-xs text-gray-500">行距</span>
+        </div>
+        <input type="range" id="lineHeightRange" min="1.4" max="2.4" value="1.8" step="0.1" class="w-full">
+        <div class="flex justify-end mt-2">
+            <button onclick="hideFontMenu()" class="text-xs text-blue-600 px-2 py-1 rounded hover:bg-blue-50">确定</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <div class="flex-shrink-0 text-center py-1 bg-white border-t border-gray-200 text-[10px] text-gray-400 z-10">
+        码客书 MarkBook v2.0
+    </div>
+
+    <script>
+    var serverBaseUrl = window.location.origin;
+    var allBooks = [];
+    var currentBook = null;
+    var chapters = [];
+    var currentChapterIdx = 0;
+
+    function getParams() {
+        var p = new URLSearchParams(window.location.search);
+        return { book: p.get('book'), chapter: p.get('chapter') };
+    }
+
+    function showToast(msg) {
+        var t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        clearTimeout(t._timer);
+        t._timer = setTimeout(function () { t.classList.remove('show'); }, 2000);
+    }
+
+    function toggleDrawer() {
+        document.getElementById('chapterDrawer').classList.toggle('open');
+        document.getElementById('drawerOverlay').classList.toggle('open');
+    }
+    function closeDrawer() {
+        document.getElementById('chapterDrawer').classList.remove('open');
+        document.getElementById('drawerOverlay').classList.remove('open');
+    }
+
+    function showFontMenu() {
+        document.getElementById('fontMenu').classList.remove('hidden');
+    }
+    function hideFontMenu() {
+        document.getElementById('fontMenu').classList.add('hidden');
+    }
+
+    function toggleDark() {
+        var d = document.body.classList.toggle('dark');
+        localStorage.setItem('reader-dark', d);
+        document.getElementById('darkBtn').innerHTML = d ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+        var t = document.getElementById('hljs-dark');
+        if (t) t.media = d ? 'all' : '(prefers-color-scheme: dark)';
+    }
+
+    function loadSettings() {
+        var fontSize = localStorage.getItem('reader-fontSize') || '16';
+        var lineHeight = localStorage.getItem('reader-lineHeight') || '1.8';
+        document.getElementById('fontSizeRange').value = fontSize;
+        document.getElementById('lineHeightRange').value = lineHeight;
+        document.getElementById('fontSizeLabel').textContent = fontSize + 'px';
+        applyStyles(fontSize, lineHeight);
+    }
+
+    function applyStyles(fontSize, lineHeight) {
+        var c = document.getElementById('readerContent');
+        c.style.fontSize = fontSize + 'px';
+        c.style.lineHeight = lineHeight;
+    }
+
+    document.getElementById('fontSizeRange').addEventListener('input', function () {
+        var v = this.value;
+        document.getElementById('fontSizeLabel').textContent = v + 'px';
+        applyStyles(v, document.getElementById('lineHeightRange').value);
+        localStorage.setItem('reader-fontSize', v);
+    });
+    document.getElementById('lineHeightRange').addEventListener('input', function () {
+        var v = this.value;
+        applyStyles(document.getElementById('fontSizeRange').value, v);
+        localStorage.setItem('reader-lineHeight', v);
+    });
+
+    function renderChapter(md, title) {
+        var html = DOMPurify.sanitize(marked.parse(md || ''));
+        var c = document.getElementById('readerContent');
+        c.innerHTML = html;
+        document.getElementById('topChapterTitle').textContent = title || '未命名章节';
+        document.title = title + ' - MarkBook';
+        c.scrollTop = 0;
+        setTimeout(function () {
+            c.querySelectorAll('pre code').forEach(function (b) { try { hljs.highlightElement(b); } catch (e) {} });
+        }, 50);
+    }
+
+    function switchChapter(idx) {
+        if (idx < 0 || idx >= chapters.length) return;
+        currentChapterIdx = idx;
+        var ch = chapters[idx];
+        document.getElementById('topChapterTitle').textContent = ch.title;
+        renderChapter('', ch.title);
+        document.getElementById('prevBtn').disabled = idx <= 0;
+        document.getElementById('nextBtn').disabled = idx >= chapters.length - 1;
+        closeDrawer();
+        var url = window.location.pathname + '?book=' + encodeURIComponent(currentBook.id) + '&chapter=' + encodeURIComponent(ch.id);
+        window.history.replaceState(null, '', url);
+        fetch(serverBaseUrl + '/api/books/' + encodeURIComponent(currentBook.id) + '/chapters/' + encodeURIComponent(ch.id))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                renderChapter(data.content || '', data.title || ch.title);
+            })
+            .catch(function (e) {
+                document.getElementById('readerContent').innerHTML = '<div class="text-center text-gray-400 mt-12"><i class="fas fa-exclamation-triangle"></i> 加载失败: ' + e.message + '</div>';
+            });
+        renderDrawerList();
+    }
+
+    function renderDrawerList() {
+        var list = document.getElementById('chapterList');
+        list.innerHTML = '';
+        chapters.forEach(function (ch, i) {
+            var div = document.createElement('div');
+            div.className = 'chapter-item' + (i === currentChapterIdx ? ' active' : '');
+            div.textContent = ch.title;
+            div.onclick = function () { switchChapter(i); };
+            list.appendChild(div);
+        });
+    }
+
+    function loadBook(bookId) {
+        fetch(serverBaseUrl + '/api/books/' + encodeURIComponent(bookId))
+            .then(function (r) { return r.json(); })
+            .then(function (book) {
+                currentBook = book;
+                chapters = book.chapters || [];
+                document.getElementById('drawerBookTitle').textContent = book.title;
+                document.getElementById('topBookTitle').textContent = book.title;
+                renderDrawerList();
+                var params = getParams();
+                var targetIdx = 0;
+                if (params.chapter) {
+                    var found = chapters.findIndex(function (c) { return c.id === params.chapter; });
+                    if (found !== -1) targetIdx = found;
+                }
+                switchChapter(targetIdx);
+            })
+            .catch(function (e) {
+                document.getElementById('readerContent').innerHTML = '<div class="text-center text-gray-400 mt-20"><i class="fas fa-book-open text-4xl mb-4"></i><p>加载书籍失败</p><p class="text-xs mt-2">' + e.message + '</p></div>';
+            });
+    }
+
+    function init() {
+        var savedDark = localStorage.getItem('reader-dark');
+        if (savedDark === 'true') toggleDark();
+
+        document.getElementById('prevBtn').addEventListener('click', function () {
+            if (currentChapterIdx > 0) switchChapter(currentChapterIdx - 1);
+        });
+        document.getElementById('nextBtn').addEventListener('click', function () {
+            if (currentChapterIdx < chapters.length - 1) switchChapter(currentChapterIdx + 1);
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { closeDrawer(); hideFontMenu(); }
+        });
+
+        document.addEventListener('click', function (e) {
+            if (!document.getElementById('fontMenu').contains(e.target) && e.target !== document.getElementById('fontBtn') && !document.getElementById('fontBtn').contains(e.target)) {
+                hideFontMenu();
+            }
+        });
+
+        loadSettings();
+
+        var params = getParams();
+        if (params.book) {
+            loadBook(params.book);
+        } else {
+            fetch(serverBaseUrl + '/api/books')
+                .then(function (r) { return r.json(); })
+                .then(function (books) {
+                    if (books.length === 0) {
+                        document.getElementById('readerContent').innerHTML = '<div class="text-center text-gray-400 mt-20"><i class="fas fa-book-open text-4xl mb-4"></i><p>暂无书籍</p></div>';
+                        return;
+                    }
+                    allBooks = books;
+                    loadBook(books[0].id);
+                })
+                .catch(function (e) {
+                    document.getElementById('readerContent').innerHTML = '<div class="text-center text-gray-400 mt-20"><i class="fas fa-exclamation-triangle text-4xl mb-4"></i><p>无法连接服务器</p></div>';
+                });
+        }
+
+        // Swipe for prev/next
+        var startX = 0;
+        document.getElementById('readerContent').addEventListener('touchstart', function (e) {
+            startX = e.changedTouches[0].screenX;
+        }, { passive: true });
+        document.getElementById('readerContent').addEventListener('touchend', function (e) {
+            var diff = e.changedTouches[0].screenX - startX;
+            if (Math.abs(diff) > 60) {
+                if (diff > 0 && currentChapterIdx > 0) switchChapter(currentChapterIdx - 1);
+                else if (diff < 0 && currentChapterIdx < chapters.length - 1) switchChapter(currentChapterIdx + 1);
+            }
+        }, { passive: true });
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

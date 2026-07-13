@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MarkBook - 智能体在线</title>
+    <meta name="description" content="MarkBook 在线电子书编辑器 · 智能体在线 · 多书籍管理、EPUB/PDF/DOCX/LaTeX 导出">
+    <meta name="theme-color" content="#3b82f6">
+    <meta property="og:title" content="MarkBook - 智能体在线">
+    <meta property="og:description" content="在线电子书编辑器 · 多书籍管理、EPUB/PDF/DOCX/LaTeX 导出">
+    <meta property="og:type" content="website">
+<meta property="og:url" content="https://example.com">
+<meta property="og:image" content="https://example.com/icons/icon-512.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icons/icon-192.svg">
+    <link rel="stylesheet" href="lib/tailwind-built.css">
+    <link rel="stylesheet" href="lib/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="lib/github.min.css">
+    <link rel="stylesheet" href="lib/github-dark.min.css" media="(prefers-color-scheme: dark)" id="hljs-dark">
+    <link rel="stylesheet" href="lib/katex.min.css">
+    <link rel="stylesheet" href="styles/style.css">
+    <style>
+        /* ── 关键 CSS：防止 JS 加载前布局偏移 ── */
+        body { margin: 0; background: #f3f4f6; }
+        body.dark { background: #111827; }
+        nav { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .status-bar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; color: #6b7280; background: #f9fafb; border-top: 1px solid #e5e7eb; }
+    </style>
+    <script>
+    // 移动端 / 微信内置浏览器 → 阅读模式
+    (function(){
+        if (location.pathname.indexOf('reader') !== -1) return;
+        var ua = navigator.userAgent.toLowerCase();
+        var isMobile = /iphone|ipad|ipod|android|mobile|phone/.test(ua);
+        var isWechat = /micromessenger/.test(ua);
+        if (isWechat || (isMobile && window.innerWidth < 768)) {
+            var url = '/reader' + location.search;
+            location.replace(url);
+        }
+    })();
+    </script>
+    <script defer src="lib/marked.min.js"></script>
+    <script defer src="lib/purify.min.js"></script>
+    <script defer src="lib/html2canvas.min.js"></script>
+    <script defer src="lib/jszip.min.js"></script>
+    <script defer src="lib/jspdf.umd.min.js"></script>
+    <script defer src="lib/FileSaver.min.js"></script>
+    <script defer src="lib/highlight.min.js"></script>
+    <script defer src="lib/katex.min.js"></script>
+    <script defer src="lib/katex-autorender.min.js"></script>
+    <script defer src="lib/mermaid.min.js"></script>
+</head>
+<body class="flex flex-col h-screen bg-gray-100">
+    <!-- Toast -->
+    <div id="toastContainer" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2" style="pointer-events:none"></div>
+
+    <!-- 顶部导航栏 -->
+    <nav class="bg-white shadow-lg z-10 flex-shrink-0">
+        <div class="px-2 py-1 flex justify-between items-center gap-1">
+            <div class="flex items-center gap-1 min-w-0">
+                <button id="sidebarToggle" class="text-gray-500 hover:text-gray-700 p-1" title="切换目录">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+                <span id="bookTitleDisplay" class="text-sm font-semibold text-gray-800 truncate max-w-[140px] cursor-pointer hover:text-blue-600" title="点击切换书籍"></span>
+                <span class="text-xs text-gray-400 hidden sm:inline" id="chapterCount"></span>
+            </div>
+            <div class="flex items-center gap-1 flex-wrap justify-end">
+                <!-- 搜索 -->
+                <button id="searchBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors" title="全文搜索">
+                    <i class="fas fa-search"></i>
+                </button>
+                <!-- 书籍列表 -->
+                <button id="bookListBtn" class="px-2 py-1 bg-gray-100 text-blue-600 text-xs rounded hover:bg-blue-50 transition-colors" title="切换书籍">
+                    <i class="fas fa-book-open"></i>
+                </button>
+                <!-- 排版设置 -->
+                <button id="typesetBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors" title="排版设置">
+                    <i class="fas fa-text-height"></i>
+                </button>
+
+                <span class="w-px h-4 bg-gray-300 mx-0.5"></span>
+
+                <button id="addChapterBtn" class="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors flex items-center gap-0.5">
+                    <i class="fas fa-plus"></i> <span class="hidden sm:inline">新章节</span>
+                </button>
+                <button id="exportEpubBtn" class="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors flex items-center gap-0.5">
+                    <i class="fas fa-book"></i> <span class="hidden sm:inline">EPUB</span>
+                </button>
+                <button id="exportPdfBtn" class="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors" title="导出 PDF">
+                    <i class="fas fa-file-pdf"></i>
+                </button>
+                <button id="exportDocxBtn" class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors" title="导出 DOCX">
+                    <i class="fas fa-file-word"></i>
+                </button>
+                <button id="exportLatexBtn" class="px-2 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-700 transition-colors" title="导出 LaTeX">
+                    <i class="fas fa-file-alt"></i>
+                </button>
+                <button id="exportSiteBtn" class="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 transition-colors" title="导出静态站点">
+                    <i class="fas fa-globe"></i>
+                </button>
+                <button id="exportWechatBtn" class="px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600 transition-colors" title="微信排版">
+                    <i class="fab fa-weixin"></i>
+                </button>
+                <button id="exportHtmlBtn" class="px-2 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors" title="单文件 HTML">
+                    <i class="fas fa-file-code"></i>
+                </button>
+
+                <span class="w-px h-4 bg-gray-300 mx-0.5"></span>
+
+                <button id="previewToggle" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors" title="切换预览">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button id="readonlyToggle" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors" title="只读模式">
+                    <i class="fas fa-lock-open"></i>
+                </button>
+                <button id="focusBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors" title="聚焦模式">
+                    <i class="fas fa-crosshairs"></i>
+                </button>
+                <button id="typewriterBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors" title="打字机模式">
+                    <i class="fas fa-align-center"></i>
+                </button>
+                <a href="/reader" class="sm:hidden px-2 py-1 bg-gray-100 text-blue-500 text-xs rounded hover:bg-blue-50 transition-colors" title="手机版">
+                    <i class="fas fa-mobile-alt"></i>
+                </a>
+                <button id="presentBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors" title="演示模式">
+                    <i class="fas fa-chalkboard"></i>
+                </button>
+                <button id="aiChatBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-purple-100 hover:text-purple-600 transition-colors" title="AI 助教">
+                    <i class="fas fa-robot"></i>
+                </button>
+                <button id="lectureBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-purple-100 hover:text-purple-600 transition-colors" title="讲解录制">
+                    <i class="fas fa-microphone"></i>
+                </button>
+                <button id="shortcutsBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors font-bold" title="快捷键">?</button>
+                <button id="darkModeBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors" title="深色模式">
+                    <i class="fas fa-moon"></i>
+                </button>
+                <button id="settingsBtn" class="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded hover:bg-gray-200 transition-colors" title="图片导出设置">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+        </div>
+        <!-- 搜索栏（折叠） -->
+        <div id="searchBar" class="hidden px-3 py-1.5 border-t bg-gray-50 flex items-center gap-2">
+            <i class="fas fa-search text-gray-400 text-xs"></i>
+            <input type="text" id="searchInput" class="flex-1 bg-transparent border-none text-sm focus:outline-none text-gray-700" placeholder="搜全书内容...">
+            <button id="searchCloseBtn" class="text-gray-400 hover:text-gray-600 text-xs"><i class="fas fa-times"></i></button>
+        </div>
+        <!-- 搜索结果 -->
+        <div id="searchResults" class="hidden absolute left-0 right-0 bg-white border-t shadow-lg z-20 max-h-64 overflow-y-auto"></div>
+    </nav>
+
+    <!-- 图片导出设置 -->
+    <div id="settingsPanel" class="hidden fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-30">
+        <div class="flex flex-col h-full">
+            <div class="flex justify-between items-center px-4 py-3 border-b">
+                <h3 class="text-lg font-semibold text-gray-800">图片导出设置</h3>
+                <button id="closeSettingsBtn" class="text-gray-500 hover:text-gray-700"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="flex-1 overflow-auto p-4 space-y-6">
+                <div class="space-y-2">
+                    <label class="text-sm font-medium text-gray-700">背景颜色</label>
+                    <div class="flex flex-wrap gap-2" id="bgColorOptions">
+                        <div class="color-option selected" style="background:#fff" data-color="#ffffff"></div>
+                        <div class="color-option" style="background:#f8fafc" data-color="#f8fafc"></div>
+                        <div class="color-option" style="background:#f1f5f9" data-color="#f1f5f9"></div>
+                        <div class="color-option" style="background:#fef2f2" data-color="#fef2f2"></div>
+                        <div class="color-option" style="background:#fff7ed" data-color="#fff7ed"></div>
+                        <div class="color-option" style="background:#525252" data-color="#525252"></div>
+                        <div class="color-option" style="background:#AC6A6A" data-color="#AC6A6A"></div>
+                        <div class="color-option" style="background:#1c1917" data-color="#1c1917"></div>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-sm font-medium text-gray-700">边框样式</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button class="style-button border rounded px-3 py-2 text-sm hover:bg-gray-50 selected" data-border-style="simple">简约边框</button>
+                        <button class="style-button border rounded px-3 py-2 text-sm hover:bg-gray-50" data-border-style="shadow">阴影边框</button>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-sm font-medium text-gray-700">水印文字</label>
+                    <input type="text" id="watermarkText" class="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" value="由 MarkBook 生成" placeholder="输入水印文字">
+                </div>
+            </div>
+            <div class="border-t p-4">
+                <button id="resetSettings" class="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">恢复默认设置</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 排版设置面板 -->
+    <div id="typesetPanel" class="hidden fixed top-0 right-0 h-full w-72 bg-white shadow-2xl z-30">
+        <div class="flex justify-between items-center px-4 py-3 border-b">
+            <h3 class="text-sm font-semibold text-gray-700"><i class="fas fa-text-height mr-1"></i>排版设置</h3>
+            <button id="closeTypesetBtn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-4 space-y-4">
+            <div>
+                <label class="text-xs text-gray-500">正文字号</label>
+                <select id="tsFontSize" class="w-full mt-1 px-2 py-1.5 border rounded text-sm">
+                    <option value="14">14px</option>
+                    <option value="15">15px</option>
+                    <option value="16" selected>16px</option>
+                    <option value="18">18px</option>
+                    <option value="20">20px</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-gray-500">行间距</label>
+                <select id="tsLineHeight" class="w-full mt-1 px-2 py-1.5 border rounded text-sm">
+                    <option value="1.4">1.4</option>
+                    <option value="1.6">1.6</option>
+                    <option value="1.8" selected>1.8</option>
+                    <option value="2.0">2.0</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-gray-500">页面宽度</label>
+                <select id="tsMaxWidth" class="w-full mt-1 px-2 py-1.5 border rounded text-sm">
+                    <option value="600px">窄（600px）</option>
+                    <option value="720px">适中（720px）</option>
+                    <option value="840px" selected>宽（840px）</option>
+                    <option value="100%">全宽</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-gray-500">代码块字号</label>
+                <select id="tsCodeSize" class="w-full mt-1 px-2 py-1.5 border rounded text-sm">
+                    <option value="12px">12px</option>
+                    <option value="13px" selected>13px</option>
+                    <option value="14px">14px</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="tsIndent" class="rounded">
+                <label for="tsIndent" class="text-xs text-gray-500">段落首行缩进</label>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="tsJustify" class="rounded">
+                <label for="tsJustify" class="text-xs text-gray-500">两端对齐</label>
+            </div>
+        </div>
+    </div>
+
+    <!-- 遮罩 -->
+    <div id="overlay" class="hidden fixed inset-0 bg-black bg-opacity-25 z-20"></div>
+
+    <!-- 移动端侧边栏遮罩 -->
+    <div id="sidebarOverlay" class="hidden fixed inset-0 bg-black bg-opacity-40 z-30" style="display:none"></div>
+
+    <!-- 主体 -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- 侧边栏 -->
+        <aside id="sidebar" class="w-56 bg-white border-r shadow-sm flex flex-col flex-shrink-0 overflow-hidden transition-all duration-200">
+            <div class="p-2 border-b bg-gray-50 flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-600">📚 目录</span>
+                <button id="bookMetaBtn" class="text-xs text-blue-500 hover:text-blue-700" title="编辑书籍信息">
+                    <i class="fas fa-pen"></i>
+                </button>
+            </div>
+            <div id="chapterTree" class="flex-1 overflow-y-auto p-1 space-y-0.5 custom-scrollbar"></div>
+            <div id="bookmarkSection" class="border-t bg-gray-50 hidden">
+                <div class="px-2 py-1 text-xs font-semibold text-gray-500 flex items-center gap-1">
+                    <i class="fas fa-bookmark"></i> 书签
+                </div>
+                <div id="bookmarkList" class="max-h-32 overflow-y-auto p-1 space-y-0.5"></div>
+            </div>
+            <div class="sidebar-actions p-2 border-t bg-gray-50 space-y-1">
+                <button id="addChapterSideBtn" class="w-full px-2 py-1.5 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors flex items-center justify-center gap-1">
+                    <i class="fas fa-plus"></i> <span class="btn-label">添加章节</span>
+                </button>
+                <button id="openFolderBtn" class="w-full px-2 py-1.5 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 transition-colors flex items-center justify-center gap-1">
+                    <i class="fas fa-folder-open"></i> <span class="btn-label">打开文件夹</span>
+                </button>
+                <input type="file" id="folderInput" webkitdirectory class="hidden">
+                <button id="importMdBtn" class="w-full px-2 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 transition-colors flex items-center justify-center gap-1">
+                    <i class="fas fa-file-import"></i> <span class="btn-label">导入 .md 文件</span>
+                </button>
+                <input type="file" id="importMdInput" accept=".md,.markdown" class="hidden" multiple>
+                <div class="border-t my-1"></div>
+                <div id="serverSection" class="flex items-center gap-1">
+                    <input type="text" id="serverUrl" value="" class="flex-1 px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="服务器地址">
+                    <button id="serverConnectBtn" class="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors whitespace-nowrap"><i class="fas fa-plug"></i></button>
+                </div>
+                <div id="serverStatus" class="text-xs text-gray-400 hidden">服务器已连接</div>
+            </div>
+        </aside>
+
+        <!-- 编辑器 + 预览 -->
+        <div id="mainContent" class="flex-1 flex flex-col p-1.5 gap-1.5 overflow-hidden">
+            <div id="splitContainer" class="flex-1 flex min-h-0 gap-0">
+                <!-- 编辑器 -->
+                <div id="editorPanel" class="bg-white rounded shadow-sm p-1.5 flex flex-col overflow-hidden" style="flex:1 1 50%;min-width:150px">
+                    <div class="md-toolbar">
+                        <div class="toolbar-group">
+                            <button onclick="insertMarkdown('heading')" class="toolbar-btn" title="标题"><i class="fas fa-heading"></i></button>
+                            <button onclick="insertMarkdown('bold')" class="toolbar-btn" title="加粗"><i class="fas fa-bold"></i></button>
+                            <button onclick="insertMarkdown('italic')" class="toolbar-btn" title="斜体"><i class="fas fa-italic"></i></button>
+                            <button onclick="insertMarkdown('highlight')" class="toolbar-btn" title="高亮"><i class="fas fa-highlighter"></i></button>
+                            <button onclick="insertMarkdown('link')" class="toolbar-btn" title="链接"><i class="fas fa-link"></i></button>
+                            <button onclick="insertMarkdown('image')" class="toolbar-btn" title="图片"><i class="fas fa-image"></i></button>
+                            <button onclick="insertMarkdown('code')" class="toolbar-btn" title="代码块"><i class="fas fa-code"></i></button>
+                            <button onclick="insertMarkdown('quote')" class="toolbar-btn" title="引用"><i class="fas fa-quote-right"></i></button>
+                            <button onclick="insertMarkdown('list-ul')" class="toolbar-btn" title="无序列表"><i class="fas fa-list-ul"></i></button>
+                            <button onclick="insertMarkdown('list-ol')" class="toolbar-btn" title="有序列表"><i class="fas fa-list-ol"></i></button>
+                        </div>
+                        <div class="toolbar-group">
+                            <button id="saveMdBtn" class="toolbar-btn" title="保存为 MD 文件"><i class="fas fa-download"></i></button>
+                            <button id="copyBtn" class="toolbar-btn" title="复制 Markdown"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+                    <div class="editor-container">
+                        <div class="line-numbers" id="lineNumbers"></div>
+                        <textarea id="editor" class="focus:outline-none focus:ring-1 focus:ring-blue-500 custom-scrollbar" placeholder="在此编写内容..." spellcheck="true"></textarea>
+                    </div>
+                    <div id="statusBar" class="status-bar">
+                        <span id="chapterTitleDisplay" class="text-xs text-gray-500 truncate max-w-[200px]"></span>
+                        <span class="status-divider">|</span>
+                        <span id="wordCount">0 字</span>
+                        <span class="status-divider">|</span>
+                        <span id="charCount">0 字符</span>
+                        <span class="status-divider">|</span>
+                        <span id="readTime">约 0 分钟</span>
+                        <span class="status-divider">|</span>
+                        <span id="saveStatus" class="text-xs text-green-600">已保存</span>
+                        <span class="status-divider">|</span>
+                        <span class="text-xs text-gray-400">码客书 MarkBook v2.0</span>
+                    </div>
+                </div>
+
+                <div id="splitDivider" class="w-1.5 cursor-col-resize flex-shrink-0 bg-transparent hover:bg-blue-400 rounded transition-colors mx-0.5"></div>
+
+                <!-- 预览区 -->
+                <div id="previewPanel" class="bg-white rounded shadow-sm p-1.5 flex flex-col overflow-hidden" style="flex:1 1 50%;min-width:150px">
+                    <div class="md-toolbar">
+                        <h2 class="text-base font-semibold text-gray-700">预览</h2>
+                        <div class="toolbar-group ml-auto">
+                            <button id="bookmarkBtn" class="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-yellow-500 transition-colors flex items-center" title="添加书签"><i class="fas fa-star"></i></button>
+                            <button id="shareLinkBtn" class="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600 transition-colors flex items-center" title="复制深度链接"><i class="fas fa-link"></i></button>
+                            <button id="ttsBtn" class="px-2 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 transition-colors flex items-center" title="朗读"><i class="fas fa-volume-up"></i></button>
+                            <button id="fullscreenPreviewBtn" class="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600 transition-colors flex items-center" title="全屏预览"><i class="fas fa-expand"></i></button>
+                            <button id="copyHtmlBtn" class="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors flex items-center ml-1"><i class="fas fa-copy mr-1"></i>复制</button>
+                            <button id="generatePdfBtn" class="px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600 transition-colors flex items-center ml-1"><i class="fas fa-file-pdf mr-1"></i>PDF</button>
+                            <button id="generateImageBtn" class="px-2 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 transition-colors flex items-center ml-1"><i class="fas fa-image mr-1"></i>图片</button>
+                            <button onclick="showSettings()" class="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600 transition-colors flex items-center ml-1"><i class="fas fa-cog"></i></button>
+                        </div>
+                    </div>
+                    <div id="preview" class="markdown-preview flex-1 overflow-auto p-2 border rounded custom-scrollbar"></div>
+                    <div id="ttsBar" class="hidden flex items-center gap-2 px-2 py-1 bg-purple-50 border-t text-xs">
+                        <button id="ttsPlayBtn" class="px-2 py-0.5 bg-purple-500 text-white rounded hover:bg-purple-600"><i class="fas fa-play"></i></button>
+                        <button id="ttsStopBtn" class="px-2 py-0.5 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"><i class="fas fa-stop"></i></button>
+                        <span class="text-gray-500">语速:</span>
+                        <input type="range" id="ttsRate" min="0.5" max="2" step="0.1" value="1" class="w-16 h-1">
+                        <span id="ttsStatus" class="text-gray-500 flex-1 truncate">就绪</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 书籍元数据弹窗 -->
+    <div id="bookMetaModal" class="hidden fixed inset-0 bg-black bg-opacity-40 z-40 flex items-center justify-center">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-96 max-w-[90%]">
+            <h3 class="text-lg font-semibold mb-4">书籍信息</h3>
+            <div class="space-y-3">
+                <div><label class="text-sm text-gray-600">书名</label><input type="text" id="metaBookTitle" class="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"></div>
+                <div><label class="text-sm text-gray-600">作者</label><input type="text" id="metaAuthor" class="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"></div>
+                <div><label class="text-sm text-gray-600">封面图片 URL（可选）</label><input type="text" id="metaCover" class="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="https://..."></div>
+                <div><label class="text-sm text-gray-600">书籍描述</label><textarea id="metaDesc" class="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" rows="3"></textarea></div>
+            </div>
+            <div class="flex justify-end gap-2 mt-4">
+                <button id="metaCancelBtn" class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm">取消</button>
+                <button id="metaSaveBtn" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 书籍列表弹窗 -->
+    <div id="bookListModal" class="hidden fixed inset-0 bg-black bg-opacity-40 z-40 flex items-center justify-center">
+        <div class="bg-white rounded-lg shadow-xl w-[500px] max-w-[90%] max-h-[80vh] flex flex-col">
+            <div class="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+                <h3 class="text-sm font-semibold text-gray-800"><i class="fas fa-book-open mr-1"></i>书籍列表</h3>
+                <button id="closeBookListBtn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="bookListItems" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+            <div class="border-t p-3 flex-shrink-0 space-y-2">
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="text" id="newBookTitle" class="px-2 py-1.5 border rounded text-xs" placeholder="新书名">
+                    <input type="text" id="newBookAuthor" class="px-2 py-1.5 border rounded text-xs" placeholder="作者（可选）">
+                </div>
+                <div class="flex gap-2">
+                    <button id="createBookBtn" class="flex-1 px-3 py-1.5 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"><i class="fas fa-plus mr-1"></i>新建</button>
+                    <button id="importPresetBtn" class="flex-1 px-3 py-1.5 bg-green-600 text-white text-xs rounded hover:bg-green-700"><i class="fas fa-download mr-1"></i>导入预置书籍</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快捷键面板 -->
+    <div id="shortcutsModal" class="hidden fixed inset-0 bg-black bg-opacity-40 z-40 flex items-center justify-center">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-[500px] max-w-[90%] max-h-[80vh] overflow-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold">快捷键</h3>
+                <button id="closeShortcutsBtn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <table class="w-full text-sm">
+                <tr class="border-b"><td class="py-2 font-mono">Ctrl+B</td><td class="py-2 text-gray-600">加粗</td></tr>
+                <tr class="border-b"><td class="py-2 font-mono">Ctrl+I</td><td class="py-2 text-gray-600">斜体</td></tr>
+                <tr class="border-b"><td class="py-2 font-mono">Ctrl+K</td><td class="py-2 text-gray-600">插入链接</td></tr>
+                <tr class="border-b"><td class="py-2 font-mono">Ctrl+H</td><td class="py-2 text-gray-600">插入标题</td></tr>
+                <tr class="border-b"><td class="py-2 font-mono">Ctrl+S</td><td class="py-2 text-gray-600">保存 .md 文件</td></tr>
+                <tr class="border-b"><td class="py-2 font-mono">Ctrl+Shift+H</td><td class="py-2 text-gray-600">显示/隐藏高亮工具栏</td></tr>
+                <tr class="border-b"><td class="py-2 font-mono">Ctrl+/</td><td class="py-2 text-gray-600">打开此面板</td></tr>
+                <tr class="border-b"><td class="py-2 font-mono">n / p</td><td class="py-2 text-gray-600">上下章节切换</td></tr>
+                <tr class="border-b"><td class="py-2 font-mono">Esc</td><td class="py-2 text-gray-600">关闭弹窗 / 退出演示模式</td></tr>
+                <tr><td class="py-2 font-mono">← →</td><td class="py-2 text-gray-600">演示模式下翻页</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- AI 对话助教面板 -->
+    <div id="aiChatPanel" class="hidden fixed top-0 right-0 h-full w-96 bg-white shadow-2xl z-30 flex flex-col">
+        <div class="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+            <h3 class="text-sm font-semibold text-gray-700"><i class="fas fa-robot text-purple-500 mr-1"></i>AI 助教</h3>
+            <button id="closeAiChatBtn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="aiChatContext" class="px-3 py-2 bg-purple-50 border-b text-xs text-gray-500 max-h-20 overflow-y-auto hidden"></div>
+        <div id="aiChatMessages" class="flex-1 overflow-y-auto p-3 space-y-3 text-sm"></div>
+        <div class="border-t p-3 flex-shrink-0">
+            <div class="flex gap-2">
+                <textarea id="aiChatInput" class="flex-1 border rounded px-2 py-1.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-purple-500" rows="2" placeholder="输入问题..."></textarea>
+                <button id="aiChatSendBtn" class="px-3 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 self-end"><i class="fas fa-paper-plane"></i></button>
+            </div>
+            <div class="flex gap-1 mt-1.5">
+                <button class="ai-prompt-btn px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200">解释这段</button>
+                <button class="ai-prompt-btn px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200">举个例子</button>
+                <button class="ai-prompt-btn px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200">出练习题</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 同步讲解控制面板 -->
+    <div id="lecturePanel" class="fixed bottom-4 right-4 z-30 bg-white shadow-xl rounded-lg border overflow-hidden hidden" style="width:280px">
+        <div class="bg-purple-600 text-white px-3 py-1.5 text-xs font-semibold flex items-center justify-between">
+            <span><i class="fas fa-microphone mr-1"></i>讲解录制</span>
+            <button id="lectureCloseBtn" class="text-white hover:text-gray-200"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-3 space-y-2">
+            <div class="flex items-center gap-2">
+                <button id="lectureRecordBtn" class="px-3 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"><i class="fas fa-circle mr-1"></i>录制</button>
+                <button id="lecturePlayBtn" class="px-3 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600" disabled><i class="fas fa-play mr-1"></i>播放</button>
+                <button id="lectureStopBtn" class="px-3 py-1 bg-gray-400 text-white text-xs rounded hover:bg-gray-500" disabled><i class="fas fa-stop"></i></button>
+            </div>
+            <div id="lectureStatus" class="text-xs text-gray-500">就绪</div>
+            <div class="flex items-center gap-2 text-xs">
+                <span class="text-gray-400">同步点:</span>
+                <span id="lectureSyncCount" class="text-gray-600">0</span>
+                <span class="text-gray-300 ml-auto" id="lectureTime">0:00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 高亮浮动工具栏 -->
+    <div id="highlightToolbar" class="hidden fixed z-30 bg-white shadow-lg rounded-lg border p-1.5 flex items-center gap-1">
+        <button data-color="#fef08a" class="w-5 h-5 rounded border hover:scale-110 transition-transform" style="background:#fef08a" title="黄色高亮"></button>
+        <button data-color="#bbf7d0" class="w-5 h-5 rounded border hover:scale-110 transition-transform" style="background:#bbf7d0" title="绿色高亮"></button>
+        <button data-color="#bfdbfe" class="w-5 h-5 rounded border hover:scale-110 transition-transform" style="background:#bfdbfe" title="蓝色高亮"></button>
+        <button data-color="#fecaca" class="w-5 h-5 rounded border hover:scale-110 transition-transform" style="background:#fecaca" title="红色高亮"></button>
+        <button data-color="#e9d5ff" class="w-5 h-5 rounded border hover:scale-110 transition-transform" style="background:#e9d5ff" title="紫色高亮"></button>
+        <div class="w-px h-5 bg-gray-200 mx-0.5"></div>
+        <button id="highlightRemoveBtn" class="text-xs text-gray-500 hover:text-red-500 px-1" title="取消高亮"><i class="fas fa-undo"></i></button>
+        <button id="highlightAiBtn" class="text-xs text-gray-500 hover:text-purple-500 px-1" title="AI 助教"><i class="fas fa-robot"></i></button>
+        <button id="highlightAnnotateBtn" class="text-xs text-gray-500 hover:text-blue-500 px-1" title="添加批注"><i class="fas fa-pen"></i></button>
+    </div>
+
+    <!-- 批注浮层 -->
+    <div id="annotationPopup" class="hidden fixed z-30 bg-white shadow-lg rounded-lg border p-3 w-64">
+        <textarea id="annotationInput" class="w-full border rounded p-2 text-sm resize-none" rows="3" placeholder="输入批注内容..."></textarea>
+        <div class="flex justify-end gap-1 mt-1">
+            <button id="annotationCancelBtn" class="px-2 py-1 text-xs text-gray-500 hover:text-gray-700">取消</button>
+            <button id="annotationSaveBtn" class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600">保存</button>
+        </div>
+    </div>
+
+    <!-- 演示模式 -->
+    <div id="presentOverlay" class="hidden fixed inset-0 bg-white z-50 flex flex-col">
+        <div class="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2 bg-gray-900 bg-opacity-60 text-white opacity-0 hover:opacity-100 transition-opacity">
+            <span id="presentSlideInfo" class="text-sm">1 / 1</span>
+            <button id="presentExitBtn" class="px-3 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600">退出演示</button>
+        </div>
+        <div id="presentContent" class="flex-1 overflow-auto p-12 max-w-5xl mx-auto w-full markdown-preview flex items-start justify-center">
+            <div id="presentSlide" class="w-full"></div>
+        </div>
+        <div class="absolute bottom-0 left-0 right-0 h-1 bg-gray-200">
+            <div id="presentProgress" class="h-full bg-blue-500 transition-all duration-300" style="width:0%"></div>
+        </div>
+    </div>
+
+    <!-- 全屏预览 -->
+    <div id="previewFullscreen" class="fixed inset-0 bg-white z-50 hidden flex flex-col">
+        <div class="flex items-center justify-between px-4 py-2 border-b bg-gray-50">
+            <span class="text-sm font-semibold text-gray-700">全屏预览</span>
+            <button id="closeFullscreenBtn" class="px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"><i class="fas fa-times mr-1"></i>关闭</button>
+        </div>
+        <div id="previewFullscreenContent" class="flex-1 overflow-auto p-8 max-w-4xl mx-auto w-full markdown-preview"></div>
+    </div>
+
+    <script>
+    function showToast(msg, type) {
+        type = type || 'info';
+        var c = document.getElementById('toastContainer');
+        if (!c) return;
+        var colors = { info:'bg-gray-700', success:'bg-green-600', warning:'bg-yellow-500', error:'bg-red-500' };
+        var t = document.createElement('div');
+        t.className = (colors[type]||'bg-gray-700') + ' text-white px-4 py-2 rounded-lg shadow-lg text-sm mb-2';
+        t.textContent = msg;
+        c.appendChild(t);
+        setTimeout(function () {
+            if (!t.parentNode) return;
+            t.style.transition = 'opacity 0.3s';
+            t.style.opacity = '0';
+            setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 300);
+        }, 2500);
+    }
+    </script>
+    <script defer src="scripts/project.js"></script>
+    <script defer src="scripts/exporter.js"></script>
+    <script defer src="scripts/main.js?v=2.0"></script>
+    <script defer>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').then(function (reg) {
+                console.log('SW registered:', reg.scope);
+            }).catch(function (err) {
+                console.warn('SW registration failed:', err);
+            });
+        }
+    </script>
+</body>
+</html>
