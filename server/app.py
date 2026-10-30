@@ -16,8 +16,9 @@ server/app.py — MarkBook 在线服务平台
   - 搜索全文 (fTS5)
 """
 
-import os, sys, json, re, shutil, mimetypes, argparse, hashlib, uuid, time
+import os, sys, json, re, shutil, mimetypes, argparse, hashlib, uuid, time, zipfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 # 加载 .env 文件（如果存在）
 _env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -279,6 +280,51 @@ def api_import_book(data: dict = Body({"source": "book"})):
     }
     write_json(dest / "book.json", meta)
     return {"id": book_id, "title": default_title, "source": source_key, "chapter_count": chapter_count, "chapters": list_chapters(book_id)}
+
+# ── 文档导入（拆书第一环：docx/epub/txt → 成书，纯标准库解析）──
+ALLOWED_DOC_EXTS = frozenset({'.txt', '.md', '.docx', '.epub'})
+MAX_DOC_SIZE = 50 * 1024 * 1024  # 50MB
+
+@app.post("/api/books/import-doc")
+async def api_import_doc(file: UploadFile = File(...), title: str = Form("")):
+    """上传外部文档 → 解析章节 → 建书。同名校验与 api_import_book 一致（存在则加时间戳）。"""
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_DOC_EXTS:
+        raise HTTPException(400, f"不支持的文档类型: {ext}（支持 .txt/.md/.docx/.epub；PDF 请先用 calibre 转 epub）")
+    content = await file.read()
+    if len(content) > MAX_DOC_SIZE:
+        raise HTTPException(400, f"文件过大，最大 {MAX_DOC_SIZE//1024//1024}MB")
+    import tempfile
+    from server.docimport import import_document
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td) / ("doc" + ext)
+        tmp.write_bytes(content)
+        try:
+            doc_title, chapters, warns = import_document(tmp)
+        except (ValueError, KeyError, ET.ParseError, zipfile.BadZipFile) as e:
+            raise HTTPException(400, f"文档解析失败：{e}")
+    book_title = _clean_title(title) or doc_title or Path(file.filename or "book").stem
+    book_id = safe_filename(book_title)
+    book_dir = BOOKS_DIR / book_id
+    if book_dir.is_dir():
+        book_id = book_id + "_" + str(int(time.time()))
+        book_dir = BOOKS_DIR / book_id
+    for i, ch in enumerate(chapters, 1):
+        ch_dir = book_dir / safe_filename(f"{i:02d}-{ch['title']}"[:80])
+        ch_dir.mkdir(parents=True, exist_ok=True)
+        body = ch["md"].strip()
+        (ch_dir / "chapter.md").write_text(f"# {ch['title']}\n\n{body}\n", "utf-8")
+    meta = {
+        "title": book_title, "author": "", "description": f"文档导入（{file.filename}）· {len(chapters)} 章",
+        "source": "import-doc", "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    write_json(book_dir / "book.json", meta)
+    return {"id": book_id, "title": book_title, "chapter_count": len(chapters),
+            "warnings": warns, "chapters": list_chapters(book_id)}
+
+def _clean_title(t: str) -> str:
+    return re.sub(r"\s+", " ", t or "").strip()
 
 # ── 章节 ──
 @app.get("/api/books/{book_id}/chapters")

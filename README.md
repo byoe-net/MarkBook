@@ -118,6 +118,14 @@ MarkBook is an all-in-one eBook workstation designed for **knowledge creators, e
 读 → 移动阅读器 / PWA 手机 App
 ```
 
+### 📥 文档导入（拆书第一环）
+
+- **EPUB / DOCX / TXT / MD 一键成书**：`POST /api/books/import-doc` 上传即建书，章节自动切分
+  （EPUB 按 spine、DOCX 按 Heading1、TXT 按第X章/回）——纯标准库解析，零新依赖
+- PDF 需重依赖且抽取质量不稳，请先用 calibre 转 epub 再导入
+- 配合 [BYOE·编导 Director](../../vd/BYOE-Director/docs/website/index.html) 拆书线：
+  导入的书经 Director `tools/book2articles.py` 变成短视频素材库（一章 = 一集）
+
 ### BYOE-Director 过稿联动
 
 配合 [BYOE·编导 Director](../../vd/BYOE-Director/docs/website/index.html) 使用：产品根
