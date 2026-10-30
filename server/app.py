@@ -122,15 +122,23 @@ def list_chapters(book_id):
             continue
         ch_id = entry.name
         title = ch_id
+        status = ""
         try:
-            first_line = md_file.read_text("utf-8").strip().split("\n")[0] if md_file.stat().st_size > 0 else ""
-            if first_line.startswith("# "):
-                title = first_line[2:].strip()
+            head = md_file.read_text("utf-8").strip().split("\n")[:8] if md_file.stat().st_size > 0 else []
+            if head and head[0].startswith("# "):
+                title = head[0][2:].strip()
+            # 过稿状态行（BYOE-Director markbook_sync 导出的章节头部 blockquote）
+            for line in head:
+                if line.startswith(">"):
+                    m = re.search(r"状态[：:]\s*([^\s｜|]+)", line)
+                    if m:
+                        status = m.group(1)
+                        break
         except:
             pass
         # 资源计数
         resources = list_resources(book_id, ch_id)
-        chapters.append({"id": ch_id, "title": title, "resources": len(resources)})
+        chapters.append({"id": ch_id, "title": title, "status": status, "resources": len(resources)})
     return chapters
 
 # ── 资源管理 ──────────────────────────────────────────
@@ -306,11 +314,32 @@ def api_save_chapter(book_id: str, chapter_id: str, data: dict = Body(...)):
             if content.endswith("\n"):
                 new_content += "\n"
             md_path.write_text(new_content, "utf-8")
-        # 更新目录名
-        new_ch_dir = md_path.parent.parent / data["title"]
+        # 更新目录名（保留 NN- 数字前缀：过稿书的章节顺序不因改名而乱）
+        new_name = safe_filename(data["title"])
+        prefix = re.match(r"^(\d{2}-)", md_path.parent.name)
+        if prefix:
+            new_name = prefix.group(1) + new_name
+        new_ch_dir = md_path.parent.parent / new_name
         if not new_ch_dir.exists():
             shutil.move(str(md_path.parent), str(new_ch_dir))
     return {"ok": True}
+
+@app.post("/api/books/{book_id}/chapters/{chapter_id}/status")
+def api_set_chapter_status(book_id: str, chapter_id: str, data: dict = Body(...)):
+    """过稿状态标记：改写章节头 blockquote 的「状态：xxx」。
+    仅对带状态行的章节生效（markbook_sync 导出的过稿书）；「已入管线 <时间戳>」的时间戳尾巴保留不影响解析。"""
+    status = str(data.get("status", "")).strip()
+    if not status:
+        raise HTTPException(400, "缺少 status")
+    md_path = BOOKS_DIR / book_id / chapter_id / "chapter.md"
+    if not md_path.is_file():
+        raise HTTPException(404, "章节不存在")
+    content = md_path.read_text("utf-8")
+    new_content, n = re.subn(r"状态[：:]\s*[^\s｜|]+", f"状态：{status}", content, count=1)
+    if n == 0:
+        raise HTTPException(400, "章节无状态行（非过稿书章节）")
+    md_path.write_text(new_content, "utf-8")
+    return {"ok": True, "status": status}
 
 @app.post("/api/books/{book_id}/chapters")
 def api_create_chapter(book_id: str, title: str = Form("新章节")):
@@ -328,6 +357,10 @@ def api_delete_chapter(book_id: str, chapter_id: str):
     if not ch_dir.is_dir():
         raise HTTPException(404, "章节不存在")
     shutil.rmtree(ch_dir)
+    # 连带清理该章节上传资源（此前删除章节会遗留 uploads 孤儿文件）
+    upload_dir = UPLOADS_DIR / book_id / chapter_id
+    if upload_dir.is_dir():
+        shutil.rmtree(upload_dir, ignore_errors=True)
     return {"ok": True}
 
 @app.post("/api/books/{book_id}/chapters/reorder")
@@ -407,9 +440,18 @@ def api_search(book_id: str, data: dict = Body(...)):
 
 # ── AI 对话 ──
 # MarkBook AI 助教独立配置（与 byoe 分离）
-MARKBOOK_LLM_ENDPOINT = os.environ.get("MARKBOOK_LLM_ENDPOINT", os.environ.get("LLM_ENDPOINT", "http://localhost:8766/v1/chat/completions"))
-MARKBOOK_LLM_API_KEY = os.environ.get("MARKBOOK_LLM_API_KEY", os.environ.get("LLM_API_KEY", ""))
-MARKBOOK_LLM_MODEL = os.environ.get("MARKBOOK_LLM_MODEL", os.environ.get("BYOE_MODEL", "deepseek-v4-flash"))
+# 端点解析顺序: MARKBOOK_LLM_ENDPOINT > LLM_ENDPOINT > OPENAI_BASE_URL（自动补 /chat/completions）> 默认本地网关
+def _resolve_llm_endpoint() -> str:
+    ep = os.environ.get("MARKBOOK_LLM_ENDPOINT") or os.environ.get("LLM_ENDPOINT") or ""
+    if not ep:
+        base = (os.environ.get("OPENAI_BASE_URL") or "").strip().rstrip("/")
+        if base:
+            ep = base if base.endswith("/chat/completions") else base + "/chat/completions"
+    return ep or "http://localhost:8766/v1/chat/completions"
+
+MARKBOOK_LLM_ENDPOINT = _resolve_llm_endpoint()
+MARKBOOK_LLM_API_KEY = os.environ.get("MARKBOOK_LLM_API_KEY") or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
+MARKBOOK_LLM_MODEL = os.environ.get("MARKBOOK_LLM_MODEL") or os.environ.get("BYOE_MODEL", "deepseek-v4-flash")
 
 @app.post("/api/books/{book_id}/chat")
 async def api_chat(book_id: str, data: dict = Body(...)):
@@ -527,14 +569,15 @@ def main():
     print(f"  按 Ctrl+C 停止")
 
     if args.book:
-        src = Path(args.book)
-        if src.is_dir():
-            print(f"  正在导入书籍: {src} ...")
-            from fastapi.testclient import TestClient
-            with TestClient(app) as c:
-                resp = c.post("/api/books/import")
-                if resp.status_code == 200:
-                    print(f"  导入完成: {resp.json().get('title', '?')}")
+        print(f"  正在导入书籍源: {args.book} ...")
+        from fastapi.testclient import TestClient
+        with TestClient(app) as c:
+            # 传 source：否则端点默认导入 "book"，--book 参数形同虚设
+            resp = c.post("/api/books/import", json={"source": args.book})
+            if resp.status_code == 200:
+                print(f"  导入完成: {resp.json().get('title', '?')}")
+            else:
+                print(f"  导入失败: {resp.json().get('detail', '?')}（--book 应为 library/ 下的书源目录名）")
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

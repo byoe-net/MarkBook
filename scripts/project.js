@@ -145,7 +145,7 @@ async function loadBook(bookId) {
         project = createProject(data.title, data.author, data.description);
         project.id = data.id;
         project.chapters = data.chapters.map(function (ch) {
-            return { id: ch.id, title: ch.title, content: '', resources: ch.resources || 0 };
+            return { id: ch.id, title: ch.title, content: '', resources: ch.resources || 0, status: ch.status || '' };
         });
         project.currentChapterId = project.chapters[0]?.id || null;
         saveProject();
@@ -371,6 +371,36 @@ function renderSidebar() {
         var actions = document.createElement('span');
         actions.className = 'chapter-actions opacity-0 group-hover:opacity-100 flex gap-0.5 ml-auto';
 
+        // 过稿状态徽标（markbook_sync 导出的章节头部「状态：」行，server 端解析）
+        var statusBadge = null;
+        if (ch.status) {
+            var SC = { '待过稿': '#d97706', '已过稿': '#059669', '已入管线': '#1c4fe8' };
+            statusBadge = document.createElement('span');
+            statusBadge.className = 'text-[10px] leading-none px-1.5 py-1 rounded-full font-medium whitespace-nowrap';
+            statusBadge.style.color = SC[ch.status] || '#6b7280';
+            statusBadge.style.background = (SC[ch.status] || '#9ca3af') + '22';
+            statusBadge.textContent = ch.status;
+        }
+
+        // 一键标过稿（仅待过稿章节显示）：标完回产品根 markbook_sync import --all 导回
+        if (ch.status === '待过稿') {
+            var okBtn = document.createElement('button');
+            okBtn.innerHTML = '<i class="fas fa-check text-xs"></i>';
+            okBtn.className = 'text-gray-400 hover:text-green-600 px-0.5';
+            okBtn.title = '标记已过稿（可回 Director 导回）';
+            okBtn.onclick = function (e) {
+                e.stopPropagation();
+                api('POST', '/api/books/' + currentBookId + '/chapters/' + ch.id + '/status', { status: '已过稿' })
+                    .then(function () {
+                        ch.status = '已过稿';
+                        renderSidebar();
+                        showToast('已标记「已过稿」：回产品根执行 markbook_sync import --all 导回', 'success');
+                    })
+                    .catch(function (err) { showToast('标记失败: ' + err.message, 'error'); });
+            };
+            actions.appendChild(okBtn);
+        }
+
         var renameBtn = document.createElement('button');
         renameBtn.innerHTML = '<i class="fas fa-pen text-xs"></i>';
         renameBtn.className = 'text-gray-400 hover:text-blue-500 px-0.5';
@@ -392,6 +422,7 @@ function renderSidebar() {
         div.appendChild(moveUp);
         div.appendChild(moveDown);
         div.appendChild(titleSpan);
+        if (statusBadge) div.appendChild(statusBadge);
         div.appendChild(actions);
         tree.appendChild(div);
     });

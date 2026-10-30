@@ -118,6 +118,14 @@ MarkBook is an all-in-one eBook workstation designed for **knowledge creators, e
 读 → 移动阅读器 / PWA 手机 App
 ```
 
+### BYOE-Director 过稿联动
+
+配合 [BYOE·编导 Director](../../vd/BYOE-Director/docs/website/index.html) 使用：产品根
+`tools/markbook_sync.py export --all` 把各集口播稿导出成书章节（每行＝一个画面节拍）→
+在这里逐行改稿，章节列表实时显示 待过稿/已过稿/已入管线 徽标，改完点 ✓ 一键标「已过稿」
+（或调 `POST /api/books/{id}/chapters/{cid}/status`）→ 产品根 `import --all` 导回渲染管线。
+注意：过稿书章节目录名带 `NN-` 排序前缀，改名会自动保留；请勿删除状态行。
+
 ---
 
 ## Quick Start / 快速开始
