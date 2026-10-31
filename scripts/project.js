@@ -620,6 +620,31 @@ function initProject() {
         }
     });
 
+    // ── 导入文档成书（EPUB/DOCX/TXT/MD → /api/books/import-doc）──
+    var importDocInput = document.getElementById('importDocInput');
+    document.getElementById('importDocBtn').addEventListener('click', function () {
+        importDocInput.click();
+    });
+    importDocInput.addEventListener('change', async function () {
+        var file = importDocInput.files && importDocInput.files[0];
+        importDocInput.value = '';
+        if (!file) return;
+        showToast('正在解析 ' + file.name + '（大文档可能要一会儿）…', 'info');
+        try {
+            var fd = new FormData();
+            fd.append('file', file);
+            var resp = await fetch('/api/books/import-doc', { method: 'POST', body: fd });
+            var data = await resp.json();
+            if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+            showToast('导入成功: ' + data.title + '（' + data.chapter_count + ' 章）', 'success');
+            (data.warnings || []).forEach(function (w) { showToast(w, 'warning'); });
+            renderBookList();
+            if (data.id) loadBook(data.id);
+        } catch (e) {
+            showToast('导入失败: ' + e.message, 'error');
+        }
+    });
+
     // ── 侧边栏 ──
     var sidebar = document.getElementById('sidebar');
     var sidebarOverlay = document.getElementById('sidebarOverlay');
